@@ -1,0 +1,940 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Chatanoo Medias Center",
+    "Metadata": {
+      "AWS::CloudFormation::Interface": {
+        "ParameterGroups": [{
+          "Label": { "default": "General Configuration" },
+          "Parameters": [
+            "ProjectName",
+            "CreateDNSRecord"
+          ]
+        }, {
+          "Label": { "default": "DNS Configuration" },
+          "Parameters": [
+            "DomainName",
+            "SubDomainName",
+            "Route53HostedZone"
+          ]
+        }, {
+          "Label": { "default": "Advanced Configuration" },
+          "Parameters": [
+            "TranscoderSourceUrl",
+            "S3UploadRepoBucket"
+          ]
+        }, {
+          "Label": { "default": "Custom Resources Configuration" },
+          "Parameters": [
+            "ElasticTranscoderPipelineLambda",
+            "ElasticTranscoderPresetLambda",
+            "S3UploaderLambda",
+            "CloudFrontIdentityLambda",
+            "CloudFrontCertificateLambda",
+            "CognitoIdentityPoolLambda",
+            "CognitoIdentityPoolRolesLambda"
+          ]
+        }],
+        "ParameterLabels": []
+      }
+    },
+    "Parameters": {
+      "ProjectName": {
+        "Type": "String"
+      },
+      "CreateDNSRecord": {
+        "Type": "String",
+        "AllowedValues": ["true", "false"],
+        "Default": "false"
+      },
+
+      "DomainName": {
+        "Description": "Domain Name of the website",
+        "Type": "String"
+      },
+      "SubDomainName": {
+        "Description": "Subdomain Name of the website",
+        "Type": "String"
+      },
+      "Route53HostedZone": {
+        "Description": "AWS Route53 HostedZone ID of the domain",
+        "Type": "AWS::Route53::HostedZone::Id"
+      },
+
+      "TranscoderSourceUrl": {
+        "Description": "Url of the source code of the transcoding lambda",
+        "Type": "String",
+        "Default": "https://deployments.chatanoo.org/mediascenter/transcoder/latest.zip"
+      },
+      "S3UploadRepoBucket": {
+        "Description": "Bucket where upload the lambda transcoding source code",
+        "Type": "String",
+        "Default": "chatanoo-repo"
+      },
+
+      "ElasticTranscoderPipelineLambda": {
+        "Description": "ElasticTranscoderPipeline lambda name",
+        "Type": "String",
+        "Default": "aws-cloudformation-elastic-transcoder-pipeline-1-0-0"
+      },
+      "ElasticTranscoderPresetLambda": {
+        "Description": "ElasticTranscoderPreset lambda name",
+        "Type": "String",
+        "Default": "aws-cloudformation-elastic-transcoder-preset-1-0-0"
+      },
+      "S3UploaderLambda": {
+        "Description": "S3 Uploader lambda name",
+        "Type": "String",
+        "Default": "aws-cloudformation-s3-uploader-1-0-0"
+      },
+      "CloudFrontIdentityLambda": {
+        "Description": "Lambda for the CloudFront Identity Custom Resource",
+        "Type": "String",
+        "Default": "aws-cloudformation-cloudfront-identity-1-0-0"
+      },
+      "CloudFrontCertificateLambda": {
+        "Description": "Lambda for the CloudFront Certificate Custom Resource",
+        "Type": "String",
+        "Default": "aws-cloudformation-cloudfront-certificate-1-0-0"
+      },
+      "CognitoIdentityPoolLambda": {
+        "Description": "Lambda for the CloudFront Certificate Custom Resource",
+        "Type": "String",
+        "Default": "aws-cloudformation-cognito-identitypool-1-0-0"
+      },
+      "CognitoIdentityPoolRolesLambda": {
+        "Description": "Lambda for the CloudFront Certificate Custom Resource",
+        "Type": "String",
+        "Default": "aws-cloudformation-cognito-identitypoolroles-1-0-0"
+      }
+    },
+    "Mappings": {
+
+    },
+    "Conditions": {
+      "UseDNSRecord": { "Fn::Equals": [{ "Ref": "CreateDNSRecord" }, "true"] }
+    },
+    "Resources": {
+
+      "InputBucket": {
+        "Type": "AWS::S3::Bucket",
+        "DeletionPolicy": "Retain",
+        "DependsOn": "TranscoderLambda",
+        "Properties": {
+          "LifecycleConfiguration": {
+            "Rules": [{
+              "Id": "delete",
+              "ExpirationInDays": 1,
+              "Prefix": "upload/",
+              "Status": "Enabled"
+            }]
+          },
+          "NotificationConfiguration": {
+            "LambdaConfigurations": [{
+              "Event": "s3:ObjectCreated:*",
+              "Filter": {
+                "S3Key": {
+                  "Rules": [{
+                    "Name" : "prefix",
+                    "Value" : "upload/"
+                  }]
+                }
+              },
+              "Function": { "Fn::GetAtt" : [ "TranscoderLambda", "Arn" ]}
+            }]
+          },
+          "Tags": [
+            { "Key": "Name", "Value": {"Fn::Join" : [" - ",[ { "Ref": "ProjectName" }, "Medias Center", "Input Bucket" ] ]} },
+            { "Key": "chatanoo:project", "Value": { "Ref": "ProjectName" } },
+            { "Key": "chatanoo:component", "Value": "medias-center" }
+          ]
+        }
+      },
+
+      "OutputBucket": {
+        "Type": "AWS::S3::Bucket",
+        "DeletionPolicy": "Retain",
+        "Properties": {
+          "LifecycleConfiguration": {
+            "Rules": [{
+              "Id": "ia",
+              "Status": "Enabled",
+              "Transitions": [{
+                "StorageClass": "STANDARD_IA",
+                "TransitionInDays": 30
+              }]
+            }]
+          },
+          "Tags": [
+            { "Key": "Name", "Value": {"Fn::Join" : [" - ",[ { "Ref": "ProjectName" }, "Medias Center", "Output Bucket" ] ]} },
+            { "Key": "chatanoo:project", "Value": { "Ref": "ProjectName" } },
+            { "Key": "chatanoo:component", "Value": "medias-center" }
+          ]
+        }
+      },
+
+      "PipelineRole": {
+         "Type": "AWS::IAM::Role",
+         "Properties": {
+            "AssumeRolePolicyDocument": {
+               "Version": "2012-10-17",
+               "Statement": [ {
+                  "Effect": "Allow",
+                  "Principal": {
+                     "Service": [ "elastictranscoder.amazonaws.com" ]
+                  },
+                  "Action": [ "sts:AssumeRole" ]
+               } ]
+            },
+            "Path": ""
+         }
+      },
+
+      "PipelinePolicy": {
+         "Type": "AWS::IAM::Policy",
+         "Properties": {
+            "PolicyName": "pipeline-policy",
+            "Roles": [{ "Ref": "PipelineRole" }],
+            "PolicyDocument": {
+              "Version": "2008-10-17",
+              "Statement": [{
+                "Sid": "1",
+                "Effect": "Allow",
+                "Action": [
+                  "s3:Put*",
+                  "s3:ListBucket",
+                  "s3:*MultipartUpload*",
+                  "s3:Get*"
+                ],
+                "Resource": [
+                  { "Fn::Join": ["",[ "arn:aws:s3:::", { "Ref": "InputBucket" } ] ]},
+                  { "Fn::Join": ["",[ "arn:aws:s3:::", { "Ref": "OutputBucket" } ] ]}
+                ]
+              },{
+                "Sid": "3",
+                "Effect": "Deny",
+                "Action": [
+                  "s3:*Delete*",
+                  "s3:*Policy*",
+                  "sns:*Remove*",
+                  "sns:*Delete*",
+                  "sns:*Permission*"
+                ],
+                "Resource": "*"
+              }]
+            }
+         }
+      },
+
+      "TranscodingPipeline": {
+         "Type": "Custom::ElasticTranscoderPipeline",
+         "Version": "1.0",
+         "Properties": {
+            "ServiceToken": { "Fn::Join": [":",[ "arn:aws:lambda", { "Ref": "AWS::Region" }, { "Ref": "AWS::AccountId" }, "function", { "Ref": "ElasticTranscoderPipelineLambda" } ] ]},
+            "Name": { "Fn::Join" : [" - ",[ { "Ref": "ProjectName" }, "Chatanoo Transcoding Pipeline" ] ]},
+            "Role": { "Fn::GetAtt": [ "PipelineRole", "Arn" ]},
+            "InputBucket": { "Ref": "InputBucket" },
+            "OutputBucket": { "Ref": "OutputBucket" }
+         }
+      },
+
+      "Mp4Preset": {
+         "Type": "Custom::ElasticTranscoderPreset",
+         "Version": "1.0",
+         "Properties": {
+            "ServiceToken": { "Fn::Join": [":",[ "arn:aws:lambda", { "Ref": "AWS::Region" }, { "Ref": "AWS::AccountId" }, "function", { "Ref": "ElasticTranscoderPresetLambda" } ] ]},
+            "Name": { "Fn::Join" : [" - ",[ { "Ref": "ProjectName" }, "Chatanoo - MP4" ] ]},
+            "Description": "Chatanoo - MP4",
+            "Container": "mp4",
+            "Video": {
+              "Codec": "H.264",
+              "CodecOptions": {
+                "InterlacedMode": "Progressive",
+                "MaxReferenceFrames": "3",
+                "Level": "3.1",
+                "ColorSpaceConversionMode": "None",
+                "Profile": "main"
+              },
+              "KeyframesMaxDist": "90",
+              "FixedGOP": "false",
+              "BitRate": "2200",
+              "FrameRate": "30",
+              "MaxWidth": "1280",
+              "MaxHeight": "720",
+              "SizingPolicy": "ShrinkToFit",
+              "PaddingPolicy": "NoPad",
+              "DisplayAspectRatio": "auto",
+              "Watermarks": [{
+                "Id": "TopLeft",
+                "MaxWidth": "10%",
+                "MaxHeight": "10%",
+                "SizingPolicy": "ShrinkToFit",
+                "HorizontalAlign": "Left",
+                "HorizontalOffset": "10%",
+                "VerticalAlign": "Top",
+                "VerticalOffset": "10%",
+                "Opacity": "100",
+                "Target": "Content"
+              }, {
+                "Id": "TopRight",
+                "MaxWidth": "10%",
+                "MaxHeight": "10%",
+                "SizingPolicy": "ShrinkToFit",
+                "HorizontalAlign": "Right",
+                "HorizontalOffset": "10%",
+                "VerticalAlign": "Top",
+                "VerticalOffset": "10%",
+                "Opacity": "100",
+                "Target": "Content"
+              }, {
+                "Id": "BottomLeft",
+                "MaxWidth": "10%",
+                "MaxHeight": "10%",
+                "SizingPolicy": "ShrinkToFit",
+                "HorizontalAlign": "Left",
+                "HorizontalOffset": "10%",
+                "VerticalAlign": "Bottom",
+                "VerticalOffset": "10%",
+                "Opacity": "100",
+                "Target": "Content"
+              }, {
+                "Id": "BottomRight",
+                "MaxWidth": "10%",
+                "MaxHeight": "10%",
+                "SizingPolicy": "ShrinkToFit",
+                "HorizontalAlign": "Right",
+                "HorizontalOffset": "10%",
+                "VerticalAlign": "Bottom",
+                "VerticalOffset": "10%",
+                "Opacity": "100",
+                "Target": "Content"
+              }]
+            },
+            "Audio": {
+              "Codec": "AAC",
+              "CodecOptions": {
+                "Profile": "AAC-LC"
+              },
+              "SampleRate": "48000",
+              "BitRate": "160",
+              "Channels": "2"
+            },
+            "Thumbnails": {
+              "Format": "png",
+              "Interval": "60",
+              "MaxWidth": "192",
+              "MaxHeight": "108",
+              "SizingPolicy": "ShrinkToFit",
+              "PaddingPolicy": "NoPad"
+            }
+         }
+      },
+
+      "WebMPreset": {
+         "Type": "Custom::ElasticTranscoderPreset",
+         "Version": "1.0",
+         "Properties": {
+            "ServiceToken": { "Fn::Join": [":",[ "arn:aws:lambda", { "Ref": "AWS::Region" }, { "Ref": "AWS::AccountId" }, "function", { "Ref": "ElasticTranscoderPresetLambda" } ] ]},
+            "Name": { "Fn::Join" : [" - ",[ { "Ref": "ProjectName" }, "Chatanoo - WebM" ] ]},
+            "Description": "Chatanoo - WebM",
+            "Container": "webm",
+            "Video": {
+              "Codec": "vp8",
+              "CodecOptions": {
+                "Profile": "1"
+              },
+              "KeyframesMaxDist": "90",
+              "FixedGOP": "false",
+              "BitRate": "2200",
+              "FrameRate": "30",
+              "MaxWidth": "1280",
+              "MaxHeight": "720",
+              "SizingPolicy": "ShrinkToFit",
+              "PaddingPolicy": "NoPad",
+              "DisplayAspectRatio": "auto",
+              "Watermarks": [{
+                "Id": "TopLeft",
+                "MaxWidth": "10%",
+                "MaxHeight": "10%",
+                "SizingPolicy": "ShrinkToFit",
+                "HorizontalAlign": "Left",
+                "HorizontalOffset": "10%",
+                "VerticalAlign": "Top",
+                "VerticalOffset": "10%",
+                "Opacity": "100",
+                "Target": "Content"
+              }, {
+                "Id": "TopRight",
+                "MaxWidth": "10%",
+                "MaxHeight": "10%",
+                "SizingPolicy": "ShrinkToFit",
+                "HorizontalAlign": "Right",
+                "HorizontalOffset": "10%",
+                "VerticalAlign": "Top",
+                "VerticalOffset": "10%",
+                "Opacity": "100",
+                "Target": "Content"
+              }, {
+                "Id": "BottomLeft",
+                "MaxWidth": "10%",
+                "MaxHeight": "10%",
+                "SizingPolicy": "ShrinkToFit",
+                "HorizontalAlign": "Left",
+                "HorizontalOffset": "10%",
+                "VerticalAlign": "Bottom",
+                "VerticalOffset": "10%",
+                "Opacity": "100",
+                "Target": "Content"
+              }, {
+                "Id": "BottomRight",
+                "MaxWidth": "10%",
+                "MaxHeight": "10%",
+                "SizingPolicy": "ShrinkToFit",
+                "HorizontalAlign": "Right",
+                "HorizontalOffset": "10%",
+                "VerticalAlign": "Bottom",
+                "VerticalOffset": "10%",
+                "Opacity": "100",
+                "Target": "Content"
+              }]
+            },
+            "Audio": {
+              "Codec": "vorbis",
+              "CodecOptions": {},
+              "SampleRate": "48000",
+              "BitRate": "160",
+              "Channels": "2"
+            },
+            "Thumbnails": {
+              "Format": "png",
+              "Interval": "60",
+              "MaxWidth": "192",
+              "MaxHeight": "108",
+              "SizingPolicy": "ShrinkToFit",
+              "PaddingPolicy": "NoPad"
+            }
+         }
+      },
+
+      "FlvPreset": {
+         "Type": "Custom::ElasticTranscoderPreset",
+         "Version": "1.0",
+         "Properties": {
+            "ServiceToken": { "Fn::Join": [":",[ "arn:aws:lambda", { "Ref": "AWS::Region" }, { "Ref": "AWS::AccountId" }, "function", { "Ref": "ElasticTranscoderPresetLambda" } ] ]},
+            "Name": { "Fn::Join" : [" - ",[ { "Ref": "ProjectName" }, "Chatanoo - FLV" ] ]},
+            "Description": "Chatanoo - FLV",
+            "Container": "flv",
+            "Video": {
+              "Codec": "H.264",
+              "CodecOptions": {
+                "InterlacedMode": "Progressive",
+                "MaxReferenceFrames": "3",
+                "Level": "3.1",
+                "ColorSpaceConversionMode": "None",
+                "Profile": "main"
+              },
+              "KeyframesMaxDist": "90",
+              "FixedGOP": "false",
+              "BitRate": "2200",
+              "FrameRate": "30",
+              "MaxWidth": "1280",
+              "MaxHeight": "720",
+              "SizingPolicy": "ShrinkToFit",
+              "PaddingPolicy": "NoPad",
+              "DisplayAspectRatio": "auto",
+              "Watermarks": [{
+                "Id": "TopLeft",
+                "MaxWidth": "10%",
+                "MaxHeight": "10%",
+                "SizingPolicy": "ShrinkToFit",
+                "HorizontalAlign": "Left",
+                "HorizontalOffset": "10%",
+                "VerticalAlign": "Top",
+                "VerticalOffset": "10%",
+                "Opacity": "100",
+                "Target": "Content"
+              }, {
+                "Id": "TopRight",
+                "MaxWidth": "10%",
+                "MaxHeight": "10%",
+                "SizingPolicy": "ShrinkToFit",
+                "HorizontalAlign": "Right",
+                "HorizontalOffset": "10%",
+                "VerticalAlign": "Top",
+                "VerticalOffset": "10%",
+                "Opacity": "100",
+                "Target": "Content"
+              }, {
+                "Id": "BottomLeft",
+                "MaxWidth": "10%",
+                "MaxHeight": "10%",
+                "SizingPolicy": "ShrinkToFit",
+                "HorizontalAlign": "Left",
+                "HorizontalOffset": "10%",
+                "VerticalAlign": "Bottom",
+                "VerticalOffset": "10%",
+                "Opacity": "100",
+                "Target": "Content"
+              }, {
+                "Id": "BottomRight",
+                "MaxWidth": "10%",
+                "MaxHeight": "10%",
+                "SizingPolicy": "ShrinkToFit",
+                "HorizontalAlign": "Right",
+                "HorizontalOffset": "10%",
+                "VerticalAlign": "Bottom",
+                "VerticalOffset": "10%",
+                "Opacity": "100",
+                "Target": "Content"
+              }]
+            },
+            "Audio": {
+              "Codec": "AAC",
+              "CodecOptions": {
+                "Profile": "AAC-LC"
+              },
+              "SampleRate": "44100",
+              "BitRate": "128",
+              "Channels": "2"
+            },
+            "Thumbnails": {
+              "Format": "png",
+              "Interval": "60",
+              "MaxWidth": "192",
+              "MaxHeight": "108",
+              "SizingPolicy": "ShrinkToFit",
+              "PaddingPolicy": "NoPad"
+            }
+         }
+      },
+
+      "Mp3Preset": {
+         "Type": "Custom::ElasticTranscoderPreset",
+         "Version": "1.0",
+         "Properties": {
+            "ServiceToken": { "Fn::Join": [":",[ "arn:aws:lambda", { "Ref": "AWS::Region" }, { "Ref": "AWS::AccountId" }, "function", { "Ref": "ElasticTranscoderPresetLambda" } ] ]},
+            "Name": { "Fn::Join" : [" - ",[ { "Ref": "ProjectName" }, "Chatanoo - MP3"] ]},
+            "Description": "Chatanoo - MP3",
+            "Container": "mp3",
+            "Audio": {
+              "Codec": "mp3",
+              "CodecOptions": {},
+              "SampleRate": "44100",
+              "BitRate": "128",
+              "Channels": "2"
+            }
+         }
+      },
+
+      "OggPreset": {
+         "Type": "Custom::ElasticTranscoderPreset",
+         "Version": "1.0",
+         "Properties": {
+            "ServiceToken": { "Fn::Join": [":",[ "arn:aws:lambda", { "Ref": "AWS::Region" }, { "Ref": "AWS::AccountId" }, "function", { "Ref": "ElasticTranscoderPresetLambda" } ] ]},
+            "Name": { "Fn::Join" : [" - ",[ { "Ref": "ProjectName" }, "Chatanoo - OGG"] ]},
+            "Description": "Chatanoo - OGG",
+            "Container": "ogg",
+            "Audio": {
+              "Codec": "vorbis",
+              "CodecOptions": {},
+              "SampleRate": "44100",
+              "BitRate": "128",
+              "Channels": "2"
+            }
+         }
+      },
+
+      "ConfigFile": {
+         "Type": "Custom::S3Uploader",
+         "Version": "1.0",
+         "Properties": {
+            "ServiceToken": { "Fn::Join": [":",[ "arn:aws:lambda", { "Ref": "AWS::Region" }, { "Ref": "AWS::AccountId" }, "function", { "Ref": "S3UploaderLambda" } ] ]},
+            "Source": {
+              "Json": {
+                "pipeline": { "Ref": "TranscodingPipeline" },
+                "mp4_preset": { "Ref": "Mp4Preset" },
+                "webm_preset": { "Ref": "WebMPreset" },
+                "flv_preset": { "Ref": "FlvPreset" },
+                "mp3_preset": { "Ref": "Mp3Preset" },
+                "ogg_preset": { "Ref": "OggPreset" }
+              }
+            },
+            "Destination": {
+              "Bucket": { "Ref": "InputBucket" },
+              "Key": "pipeline.config"
+            }
+         }
+      },
+
+      "TranscoderRole": {
+         "Type": "AWS::IAM::Role",
+         "Properties": {
+            "AssumeRolePolicyDocument": {
+               "Version": "2012-10-17",
+               "Statement": [ {
+                  "Effect": "Allow",
+                  "Principal": {
+                     "Service": [ "lambda.amazonaws.com" ]
+                  },
+                  "Action": [ "sts:AssumeRole" ]
+               } ]
+            },
+            "Path": ""
+         }
+      },
+
+      "TranscoderPolicy": {
+         "Type": "AWS::IAM::Policy",
+         "Properties": {
+            "PolicyName": "pipeline-policy",
+            "Roles": [{ "Ref": "PipelineRole" }],
+            "PolicyDocument": {
+              "Version": "2008-10-17",
+              "Statement": [{
+                "Sid": "1",
+                "Effect": "Allow",
+                "Action": [
+                  "elastictranscoder:CreateJob"
+                ],
+                "Resource": [
+                  { "Fn::Join": ["",[ "arn:aws:elastictranscoder:", { "Ref": "AWS::Region" }, ":", { "Ref": "AWS::AccountId" }, ":pipeline/", { "Ref": "TranscodingPipeline" } ] ]}
+                ]
+              },{
+                "Sid": "2",
+                "Effect": "Allow",
+                "Action": [
+                  "logs:*"
+                ],
+                "Resource": "arn:aws:logs:*:*:*"
+              }]
+            }
+         }
+      },
+
+      "TranscoderSource": {
+         "Type": "Custom::S3Uploader",
+         "Version": "1.0",
+         "Properties": {
+            "ServiceToken": { "Fn::Join": [":",[ "arn:aws:lambda", { "Ref": "AWS::Region" }, { "Ref": "AWS::AccountId" }, "function", { "Ref": "S3UploaderLambda" } ] ]},
+            "Source": {
+              "Url": { "Ref": "TranscoderSourceUrl" }
+            },
+            "Destination": {
+              "Bucket": { "Ref": "S3UploadRepoBucket" },
+              "Key": {"Fn::Join" : ["/",[ { "Ref": "AWS::StackName" }, "transcoder/source.zip" ] ]}
+            }
+         }
+      },
+
+      "TranscoderLambda": {
+        "Type": "AWS::Lambda::Function",
+        "DependsOn": "ConfigFile",
+        "Properties": {
+          "Code": {
+            "S3Bucket": { "Fn::GetAtt": [ "TranscoderSource", "Bucket" ]},
+            "S3Key": { "Fn::GetAtt": [ "TranscoderSource", "Key" ]}
+          },
+          "Description": "Chatanoo MediasCenter Transcoder",
+          "Handler": "index.js",
+          "MemorySize": 128,
+          "Role": { "Fn::GetAtt" : [ "TranscoderRole", "Arn" ]},
+          "Runtime": "nodejs4.3",
+          "Timeout": 300
+        }
+      },
+
+      "TranscoderLambdaInvokePermission": {
+        "Type": "AWS::Lambda::Permission",
+        "Properties": {
+          "FunctionName" : { "Fn::GetAtt" : ["TranscoderLambda", "Arn"] },
+          "Action": "lambda:InvokeFunction",
+          "Principal": "s3.amazonaws.com",
+          "SourceAccount": { "Ref" : "AWS::AccountId" }
+        }
+      },
+
+      "CDNIdentity": {
+         "Type": "Custom::CloudFrontIdentity",
+         "Version": "1.0",
+         "Properties": {
+            "ServiceToken": { "Fn::Join": [":",[ "arn:aws:lambda", { "Ref": "AWS::Region" }, { "Ref": "AWS::AccountId" }, "function", { "Ref": "CloudFrontIdentityLambda" } ] ]},
+            "Comment": { "Fn::Join": ["-",[ "access-identity", { "Ref": "OutputBucket" } ] ]}
+         }
+      },
+
+      "CDNCertificate": {
+         "Type": "Custom::CloudFrontCertificate",
+         "Version": "1.0",
+         "Properties": {
+            "ServiceToken": { "Fn::Join": [":",[ "arn:aws:lambda", { "Ref": "AWS::Region" }, { "Ref": "AWS::AccountId" }, "function", { "Ref": "CloudFrontCertificateLambda" } ] ]},
+            "DomainName": { "Fn::Join": [".",[ { "Ref": "SubDomainName" }, { "Ref": "DomainName" } ] ]},
+            "DomainValidationOptions": [{
+              "DomainName": { "Ref": "DomainName" },
+              "ValidationDomain": { "Fn::Join": [".",[ { "Ref": "SubDomainName" }, { "Ref": "DomainName" } ] ]}
+            }],
+            "Tags": [
+              { "Key": "Name", "Value": {"Fn::Join" : [" - ",[ { "Ref": "ProjectName" }, "Medias Center", "Certificate" ] ]} },
+              { "Key": "chatanoo:project", "Value": { "Ref": "ProjectName" } },
+              { "Key": "chatanoo:component", "Value": "medias-center" }
+            ]
+         },
+         "Condition": "UseDNSRecord"
+      },
+
+      "CDNDistribution": {
+        "Type": "AWS::CloudFront::Distribution",
+        "Properties": {
+          "DistributionConfig": {
+            "Origins": [ {
+              "DomainName": { "Fn::GetAtt": [ "OutputBucket", "DomainName" ]},
+              "Id": { "Fn::Join": ["-", ["s3Origin", { "Ref": "OutputBucket" }]] },
+              "S3OriginConfig": {
+                "OriginAccessIdentity": { "Fn::Join": ["",[ "origin-access-identity/cloudfront/", { "Ref": "CDNIdentity" } ] ]}
+              }
+            }],
+            "Enabled": "true",
+            "Comment": "Chatanoo Administration Tool Distribution",
+            "Aliases": [{
+              "Fn::If": [
+                "UseDNSRecord",
+                { "Fn::Join": [".", [{ "Ref": "SubDomainName" }, { "Ref": "DomainName" }]] },
+                { "Ref": "AWS::NoValue" }
+              ]
+            }
+            ],
+            "PriceClass": "PriceClass_All",
+            "DefaultCacheBehavior": {
+              "AllowedMethods": [ "GET", "HEAD" ],
+              "TargetOriginId": { "Fn::Join": ["-", ["s3Origin", { "Ref": "OutputBucket" }]] },
+              "ForwardedValues": {
+                "QueryString": "false",
+                "Cookies": { "Forward": "none" }
+              },
+              "ViewerProtocolPolicy": "allow-all"
+            },
+            "ViewerCertificate": {
+              "Fn::If": [
+                "UseDNSRecord",
+                {
+                  "SSLSupportMethod": "sni-only",
+                  "ACMCertificateArn": { "Ref": "CDNCertificate" },
+                  "MinimumProtocolVersion": "TLSv1",
+                  "Certificate": { "Ref": "CDNCertificate" },
+                  "CertificateSource": "acm"
+                },
+                { "Ref": "AWS::NoValue" }
+              ]
+            }
+          }
+        }
+      },
+
+      "OutputBucketPolicy": {
+        "Type": "AWS::S3::BucketPolicy",
+        "DependsOn": "CDNDistribution",
+        "Properties": {
+          "Bucket": { "Ref": "OutputBucket" },
+          "PolicyDocument": {
+            "Version": "2008-10-17",
+	          "Statement": [{
+              "Sid": "2",
+        			"Effect": "Allow",
+        			"Principal": {
+        				"CanonicalUser": { "Fn::GetAtt": [ "CDNIdentity", "S3CanonicalUserId" ]}
+        			},
+        			"Action": "s3:GetObject",
+        			"Resource": { "Fn::Join": ["",[ "arn:aws:s3:::", { "Ref": "OutputBucket" }, "/*" ] ]}
+            }]
+          }
+        }
+      },
+
+      "DNSRecord": {
+        "Type": "AWS::Route53::RecordSet",
+        "Properties": {
+           "HostedZoneId": { "Fn::If": ["UseDNSRecord", { "Ref": "Route53HostedZone" }, { "Ref": "AWS::NoValue" }] },
+           "Comment": { "Fn::Join" : [" - ",[ { "Ref": "ProjectName" }, "Public DNS Record for Chatanoo Medias Center" ] ]},
+           "Name": { "Fn::Join": ["", [{ "Ref": "SubDomainName" }, ".", { "Ref": "DomainName" }, "."]] } ,
+           "Type": "CNAME",
+           "TTL": "300",
+           "ResourceRecords": [
+              { "Fn::GetAtt": [ "CDNDistribution", "DomainName" ] }
+           ]
+        },
+        "Condition": "UseDNSRecord"
+      },
+
+      "UploadIdentityAuthRole": {
+         "Type": "AWS::IAM::Role",
+         "Properties": {
+            "AssumeRolePolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [ {
+                "Sid": "",
+                "Effect": "Allow",
+                "Principal": {
+                  "Federated": "cognito-identity.amazonaws.com"
+                },
+                "Action": "sts:AssumeRoleWithWebIdentity",
+                "Condition": {
+                  "StringEquals": {
+                    "cognito-identity.amazonaws.com:aud": { "Ref": "UploadIdentityPool" }
+                  },
+                  "ForAnyValue:StringLike": {
+                    "cognito-identity.amazonaws.com:amr": "authenticated"
+                  }
+                }
+              }]
+            },
+            "Path": ""
+         }
+      },
+
+      "UploadIdentityAuthPolicy": {
+        "Type": "AWS::IAM::Policy",
+        "Properties": {
+          "PolicyName": "UploadIdentityAuthPolicy",
+          "Roles": [ { "Ref": "UploadIdentityAuthRole" } ],
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [{
+              "Effect": "Allow",
+              "Action": [
+                "mobileanalytics:PutEvents",
+                "cognito-sync:*"
+              ],
+              "Resource": [
+                "*"
+              ]
+            }, {
+              "Effect": "Allow",
+              "Action": [
+                "s3:PutObject"
+              ],
+              "Resource": [
+                { "Fn::Join": ["",[ "arn:aws:s3:::", { "Ref": "InputBucket" }, "/upload/" ] ]}
+              ]
+            }]
+          }
+        }
+      },
+
+      "UploadIdentityUnauthRole": {
+         "Type": "AWS::IAM::Role",
+         "Properties": {
+            "AssumeRolePolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [ {
+                "Sid": "",
+                "Effect": "Allow",
+                "Principal": {
+                  "Federated": "cognito-identity.amazonaws.com"
+                },
+                "Action": "sts:AssumeRoleWithWebIdentity",
+                "Condition": {
+                  "StringEquals": {
+                    "cognito-identity.amazonaws.com:aud": { "Ref": "UploadIdentityPool" }
+                  },
+                  "ForAnyValue:StringLike": {
+                    "cognito-identity.amazonaws.com:amr": "unauthenticated"
+                  }
+                }
+              }]
+            },
+            "Path": ""
+         }
+      },
+
+      "UploadIdentityUnauthPolicy": {
+        "Type": "AWS::IAM::Policy",
+        "Properties": {
+          "PolicyName": "UploadIdentityUnauthPolicy",
+          "Roles": [ { "Ref": "UploadIdentityUnauthRole" } ],
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [{
+              "Effect": "Allow",
+              "Action": [
+                "mobileanalytics:PutEvents",
+                "cognito-sync:*"
+              ],
+              "Resource": [
+                "*"
+              ]
+            }, {
+              "Effect": "Allow",
+              "Action": [
+                "s3:PutObject"
+              ],
+              "Resource": [
+                { "Fn::Join": ["",[ "arn:aws:s3:::", { "Ref": "InputBucket" }, "/upload/" ] ]}
+              ]
+            }]
+          }
+        }
+      },
+
+      "UploadIdentityPool": {
+         "Type": "Custom::CognitoIdentityPool",
+         "Version": "1.0",
+         "Properties": {
+            "ServiceToken": { "Fn::Join": [":",[ "arn:aws:lambda", { "Ref": "AWS::Region" }, { "Ref": "AWS::AccountId" }, "function", { "Ref": "CognitoIdentityPoolLambda" } ] ]},
+            "IdentityPoolName": "MyIdentityPool",
+            "AllowUnauthenticatedIdentities": "true",
+            "DeveloperProviderName": "MyDeveloper",
+            "SupportedLoginProviders": {
+              "graph.facebook.com": "123456789012345"
+            }
+         }
+      },
+
+      "UploadIdentityRoles": {
+         "Type": "Custom::CognitoIdentityPoolRoles",
+         "Version": "1.0",
+         "Properties": {
+            "ServiceToken": { "Fn::Join": [":",[ "arn:aws:lambda", { "Ref": "AWS::Region" }, { "Ref": "AWS::AccountId" }, "function", { "Ref": "CognitoIdentityPoolRolesLambda" } ] ]},
+            "IdentityPoolId": { "Ref": "UploadIdentityPool" },
+            "Roles": {
+              "authenticated": { "Fn::GetAtt": [ "UploadIdentityAuthRole", "Arn" ]},
+              "unauthenticated": { "Fn::GetAtt": [ "UploadIdentityUnauthRole", "Arn" ]}
+            }
+         }
+      }
+
+    },
+    "Outputs": {
+      "InputBucket": {
+        "Value": { "Ref": "InputBucket" }
+      },
+      "OutputBucket": {
+        "Value": { "Ref": "OutputBucket" }
+      },
+      "TranscodingPipeline": {
+        "Value": { "Ref": "TranscodingPipeline" }
+      },
+      "Mp4Preset": {
+        "Value": { "Ref": "Mp4Preset" }
+      },
+      "WebMPreset": {
+        "Value": { "Ref": "WebMPreset" }
+      },
+      "FlvPreset": {
+        "Value": { "Ref": "FlvPreset" }
+      },
+      "Mp3Preset": {
+        "Value": { "Ref": "Mp3Preset" }
+      },
+      "OggPreset": {
+        "Value": { "Ref": "OggPreset" }
+      },
+      "UploadIdentityPool": {
+        "Value": { "Ref": "UploadIdentityPool" }
+      },
+      "CDNDistributionUrl": {
+        "Value": { "Fn::Join": ["",[ "https://", { "Fn::GetAtt" : [ "CDNDistribution", "DomainName" ] } ] ]}
+      },
+      "MediasCenterUrl": {
+        "Value": { "Fn::Join": ["",[ "https://", { "Ref": "SubDomainName" }, ".", { "Ref": "DomainName" } ] ]},
+        "Condition": "UseDNSRecord"
+      }
+    }
+}
