@@ -1,0 +1,27 @@
+{
+  "name": "chatanoo-aws-mediascenter",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Warn: no test specified\" && exit 0",
+    "build": "node_modules/.bin/browserify -t coffeeify --extension=\".coffee\" --external gm --external aws-sdk src/index.coffee > build/index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ConcertUrbain/chatanoo-aws-mediascenter.git"
+  },
+  "author": "Mathieu Desvé <mathieu.desve@me.com>",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/ConcertUrbain/chatanoo-aws-mediascenter/issues"
+  },
+  "homepage": "https://github.com/ConcertUrbain/chatanoo-aws-mediascenter#readme",
+  "dependencies": {
+    "async": "^2.0.1",
+    "aws-sdk": "^2.6.3",
+    "browserify": "^13.1.0",
+    "coffeeify": "^2.0.1",
+    "gm": "^1.23.0"
+  }
+}
