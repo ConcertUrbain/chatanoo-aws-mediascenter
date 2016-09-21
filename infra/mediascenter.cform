@@ -1215,7 +1215,7 @@
       "CDNDistributionUrl": {
         "Value": { "Fn::Join": ["",[ "https://", { "Fn::GetAtt" : [ "CDNDistribution", "DomainName" ] } ] ]}
       },
-      "MediasCenterUrl": {
+      "Url": {
         "Value": { "Fn::Join": ["",[ "https://", { "Ref": "SubDomainName" }, ".", { "Ref": "DomainName" } ] ]},
         "Condition": "UseDNSRecord"
       }
