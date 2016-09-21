@@ -4,7 +4,9 @@ mkdir build
 npm run build
 
 echo "Zip it"
-zip build/transcoder.zip build/index.js
+cd build
+zip transcoder.zip index.js
+cd ..
 
 echo "Deploy $TRAVIS_TAG version to S3"
 aws s3 cp infra/mediascenter.cform s3://chatanoo-deployment/infra/mediascenter/$TRAVIS_TAG.cform

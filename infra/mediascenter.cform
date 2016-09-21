@@ -145,7 +145,7 @@
           "Tags": [
             { "Key": "Name", "Value": {"Fn::Join" : [" - ",[ { "Ref": "ProjectName" }, "Medias Center", "Input Bucket" ] ]} },
             { "Key": "chatanoo:project", "Value": { "Ref": "ProjectName" } },
-            { "Key": "chatanoo:component", "Value": "medias-center" }
+            { "Key": "chatanoo:component", "Value": "mediascenter" }
           ]
         }
       },
@@ -167,7 +167,7 @@
           "Tags": [
             { "Key": "Name", "Value": {"Fn::Join" : [" - ",[ { "Ref": "ProjectName" }, "Medias Center", "Output Bucket" ] ]} },
             { "Key": "chatanoo:project", "Value": { "Ref": "ProjectName" } },
-            { "Key": "chatanoo:component", "Value": "medias-center" }
+            { "Key": "chatanoo:component", "Value": "mediascenter" }
           ]
         }
       },
@@ -332,6 +332,7 @@
       "WebMPreset": {
          "Type": "Custom::ElasticTranscoderPreset",
          "Version": "1.0",
+         "DependsOn": "Mp4Preset",
          "Properties": {
             "ServiceToken": { "Fn::Join": [":",[ "arn:aws:lambda", { "Ref": "AWS::Region" }, { "Ref": "AWS::AccountId" }, "function", { "Ref": "ElasticTranscoderPresetLambda" } ] ]},
             "Name": { "Fn::Join" : [" - ",[ { "Ref": "ProjectName" }, "Chatanoo - WebM" ] ]},
@@ -418,6 +419,7 @@
       "FlvPreset": {
          "Type": "Custom::ElasticTranscoderPreset",
          "Version": "1.0",
+         "DependsOn": "WebMPreset",
          "Properties": {
             "ServiceToken": { "Fn::Join": [":",[ "arn:aws:lambda", { "Ref": "AWS::Region" }, { "Ref": "AWS::AccountId" }, "function", { "Ref": "ElasticTranscoderPresetLambda" } ] ]},
             "Name": { "Fn::Join" : [" - ",[ { "Ref": "ProjectName" }, "Chatanoo - FLV" ] ]},
@@ -510,6 +512,7 @@
       "HLS400KPreset": {
          "Type": "Custom::ElasticTranscoderPreset",
          "Version": "1.0",
+         "DependsOn": "FlvPreset",
          "Properties": {
             "ServiceToken": { "Fn::Join": [":",[ "arn:aws:lambda", { "Ref": "AWS::Region" }, { "Ref": "AWS::AccountId" }, "function", { "Ref": "ElasticTranscoderPresetLambda" } ] ]},
             "Name": { "Fn::Join" : [" - ",[ { "Ref": "ProjectName" }, "Chatanoo - HLS 400k" ] ]},
@@ -602,6 +605,7 @@
       "HLS1MPreset": {
          "Type": "Custom::ElasticTranscoderPreset",
          "Version": "1.0",
+         "DependsOn": "HLS400KPreset",
          "Properties": {
             "ServiceToken": { "Fn::Join": [":",[ "arn:aws:lambda", { "Ref": "AWS::Region" }, { "Ref": "AWS::AccountId" }, "function", { "Ref": "ElasticTranscoderPresetLambda" } ] ]},
             "Name": { "Fn::Join" : [" - ",[ { "Ref": "ProjectName" }, "Chatanoo - HLS 1M" ] ]},
@@ -694,6 +698,7 @@
       "HLS2MPreset": {
          "Type": "Custom::ElasticTranscoderPreset",
          "Version": "1.0",
+         "DependsOn": "HLS1MPreset",
          "Properties": {
             "ServiceToken": { "Fn::Join": [":",[ "arn:aws:lambda", { "Ref": "AWS::Region" }, { "Ref": "AWS::AccountId" }, "function", { "Ref": "ElasticTranscoderPresetLambda" } ] ]},
             "Name": { "Fn::Join" : [" - ",[ { "Ref": "ProjectName" }, "Chatanoo - HLS 2M" ] ]},
@@ -786,6 +791,7 @@
       "Mp3Preset": {
          "Type": "Custom::ElasticTranscoderPreset",
          "Version": "1.0",
+         "DependsOn": "HLS2MPreset",
          "Properties": {
             "ServiceToken": { "Fn::Join": [":",[ "arn:aws:lambda", { "Ref": "AWS::Region" }, { "Ref": "AWS::AccountId" }, "function", { "Ref": "ElasticTranscoderPresetLambda" } ] ]},
             "Name": { "Fn::Join" : [" - ",[ { "Ref": "ProjectName" }, "Chatanoo - MP3"] ]},
@@ -804,6 +810,7 @@
       "OggPreset": {
          "Type": "Custom::ElasticTranscoderPreset",
          "Version": "1.0",
+         "DependsOn": "Mp3Preset",
          "Properties": {
             "ServiceToken": { "Fn::Join": [":",[ "arn:aws:lambda", { "Ref": "AWS::Region" }, { "Ref": "AWS::AccountId" }, "function", { "Ref": "ElasticTranscoderPresetLambda" } ] ]},
             "Name": { "Fn::Join" : [" - ",[ { "Ref": "ProjectName" }, "Chatanoo - OGG"] ]},
@@ -879,7 +886,7 @@
                   "elastictranscoder:CreateJob"
                 ],
                 "Resource": [
-                  { "Fn::Join": ["",[ "arn:aws:elastictranscoder:", { "Ref": "AWS::Region" }, ":", { "Ref": "AWS::AccountId" }, ":pipeline/", { "Ref": "TranscodingPipeline" } ] ]}
+                  "*"
                 ]
               },{
                 "Sid": "2",
@@ -910,7 +917,6 @@
 
       "TranscoderLambda": {
         "Type": "AWS::Lambda::Function",
-        "DependsOn": "ConfigFile",
         "Properties": {
           "Code": {
             "S3Bucket": { "Fn::GetAtt": [ "TranscoderSource", "Bucket" ]},
@@ -957,7 +963,7 @@
             "Tags": [
               { "Key": "Name", "Value": {"Fn::Join" : [" - ",[ { "Ref": "ProjectName" }, "Medias Center", "Certificate" ] ]} },
               { "Key": "chatanoo:project", "Value": { "Ref": "ProjectName" } },
-              { "Key": "chatanoo:component", "Value": "medias-center" }
+              { "Key": "chatanoo:component", "Value": "mediascenter" }
             ]
          },
          "Condition": "UseDNSRecord"
