@@ -17,8 +17,8 @@ loadConfig = (event, callback)->
   s3.getObject params, (err, data)->
     return callback(err) if err
 
-    config = JSON.parse(data.body);
-    callback(config)
+    config = JSON.parse(data.Body.toString());
+    callback(null, config)
 
 exports.handler = (event, context) ->
   console.log 'Received event:', JSON.stringify(event, null, 2)
@@ -34,34 +34,34 @@ exports.handler = (event, context) ->
 
     outputBucket = config.output_bucket
 
-    mediaId = key.replace(/\.[^/.]+$/, '')
+    mediaId = key.replace(/\.[^/.]+$/, '').substring(7) # remove upload folder and special caracter
     transcoderType = null
     switch true
       when /M-[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}/i.test(mediaId)
         transcoderType = 'video'
         outputs = [
-          { Key: "#{mediaId}/video.mp4",     PresetId: config.mp4_preset }
-          { Key: "#{mediaId}/video.webm",    PresetId: config.webm_preset }
-          { Key: "#{mediaId}/video.flv",     PresetId: config.flv_preset }
-          { Key: "#{mediaId}/hls-400k/part", PresetId: config.hls400k_preset }
-          { Key: "#{mediaId}/hls-1m/part",   PresetId: config.hls1m_preset }
-          { Key: "#{mediaId}/hls-2m/part",   PresetId: config.hls2m_preset }
+          { Key: "video.mp4",     PresetId: config.mp4_preset }
+          { Key: "video.webm",    PresetId: config.webm_preset }
+          { Key: "video.flv",     PresetId: config.flv_preset }
+          { Key: "hls-400k/part", PresetId: config.hls400k_preset, SegmentDuration: "2" }
+          { Key: "hls-1m/part",   PresetId: config.hls1m_preset, SegmentDuration: "2" }
+          { Key: "hls-2m/part",   PresetId: config.hls2m_preset, SegmentDuration: "2" }
         ]
         playlists = [{
           Name: "playlist"
           Format: "HLSv3"
           OutputKeys: [
-            "#{mediaId}/hls-400k/part"
-            "#{mediaId}/hls-1m/part"
-            "#{mediaId}/hls-2m/part"
+            "hls-400k/part"
+            "hls-1m/part"
+            "hls-2m/part"
           ]
         }]
 
       when /A-[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}/i.test(mediaId)
         transcoderType = 'audio'
         outputs = [
-          { Key: "#{mediaId}/audio.mp3", PresetId: config.mp3_preset }
-          { Key: "#{mediaId}/audio.ogg", PresetId: config.ogg_preset }
+          { Key: "audio.mp3", PresetId: config.mp3_preset }
+          { Key: "audio.ogg", PresetId: config.ogg_preset }
         ]
 
       when /P-[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}/i.test(mediaId)
@@ -77,6 +77,7 @@ exports.handler = (event, context) ->
           Key: key
         PipelineId: config.pipeline
         Outputs: outputs
+        OutputKeyPrefix: "#{mediaId}/"
 
       if playlists
         params.Playlists = playlists
@@ -84,7 +85,8 @@ exports.handler = (event, context) ->
       transcoder.createJob params, (err, data) ->
         if err
           console.log err, err.stack
-          context.fail 'Error', 'Error Creating Job: ' + err
+          console.error 'Error Creating Job: ' + err
+          context.fail()
         else
           console.log data
           context.succeed()
@@ -113,7 +115,8 @@ exports.handler = (event, context) ->
         ], (err)->
           if err
             console.log err, err.stack
-            context.fail 'Error', 'Error Creating Job: ' + err
+            console.error 'Error Creating Job: ' + err
+            context.fail()
           else
             context.succeed()
 

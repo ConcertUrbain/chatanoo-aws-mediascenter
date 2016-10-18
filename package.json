@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Warn: no test specified\" && exit 0",
-    "build": "node_modules/.bin/browserify -t coffeeify --extension=\".coffee\" --external gm --external aws-sdk src/index.coffee > build/index.js"
+    "build": "coffee --compile --output build/ src/"
   },
   "repository": {
     "type": "git",
