@@ -7,7 +7,7 @@ transcoder = new aws.ElasticTranscoder(apiVersion: '2012-09-25')
 
 config = null;
 loadConfig = (event, callback)->
-  return callback(config) if config
+  return callback(null, config) if config
   bucket = event.Records[0].s3.bucket.name
 
   params =

@@ -275,6 +275,18 @@ Resources:
             Transitions:
               - StorageClass: STANDARD_IA
                 TransitionInDays: 30
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders:
+              - "*"
+            AllowedMethods:
+              - PUT
+              - POST
+              - GET
+              - HEAD
+            AllowedOrigins:
+              - "*"
+            MaxAge: 3000
       Tags:
         - Key: Name
           Value: !Join [' - ', [!Ref ProjectName, 'Medias Center', 'Output Bucket']]
@@ -341,7 +353,7 @@ Resources:
     Version: '1.0'
     Properties:
       ServiceToken: !Join [':', ['arn:aws:lambda', !Ref 'AWS::Region', !Ref 'AWS::AccountId', function, !Ref ElasticTranscoderPipelineLambda]]
-      Name: !Join [' - ', [!Ref ProjectName, 'Chatanoo Transcoding Pipeline']]
+      Name: !Join [' - ', [!Ref ProjectName, 'Pipeline']]
       Role: !GetAtt PipelineRole.Arn
       InputBucket: !Ref InputBucket
       OutputBucket: !Ref OutputBucket
@@ -1102,6 +1114,11 @@ Resources:
               - s3:PutObject
             Resource:
               - !Join ['', ['arn:aws:s3:::', !Ref InputBucket, "/upload/"]]
+          - Effect: Allow
+            Action:
+              - s3:GetObject
+            Resource:
+              - !Join ['', ['arn:aws:s3:::', !Ref OutputBucket, "/*"]]
 
   UploadIdentityUnauthRole:
     Type: AWS::IAM::Role
@@ -1141,6 +1158,11 @@ Resources:
               - s3:PutObject
             Resource:
               - !Join ['', ['arn:aws:s3:::', !Ref InputBucket, "/upload/*"]]
+          - Effect: Allow
+            Action:
+              - s3:GetObject
+            Resource:
+              - !Join ['', ['arn:aws:s3:::', !Ref OutputBucket, "/*"]]
 
   UploadIdentityPool:
     Type: Custom::CognitoIdentityPool
